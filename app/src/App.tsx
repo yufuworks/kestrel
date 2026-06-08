@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
@@ -32,6 +32,12 @@ function App() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    fetchMetrics();
+    const timer = setInterval(fetchMetrics, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   function formatBytes(bytes: number): string {
     return (bytes / 1024 / 1024 / 1024).toFixed(1) + " GB";
