@@ -1,49 +1,91 @@
 import { useState } from "react";
-import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+interface Metrics {
+  cpu_usage: number;
+  memory_total: number;
+  memory_used: number;
+  temperature: number;
+  disk_total: number;
+  disk_used: number;
+  uptime_secs: number;
+}
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+function App() {
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function fetchMetrics() {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await invoke<Metrics>("get_metrics", {
+        host: "192.168.10.171:22",
+        user: "yufu",
+      });
+      setMetrics(result);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function formatBytes(bytes: number): string {
+    return (bytes / 1024 / 1024 / 1024).toFixed(1) + " GB";
+  }
+
+  function formatUptime(secs: number): string {
+    const days = Math.floor(secs / 86400);
+    const hours = Math.floor((secs % 86400) / 3600);
+    const mins = Math.floor((secs % 3600) / 60);
+    return `${days}日 ${hours}時間 ${mins}分`;
   }
 
   return (
     <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+      <h1>Kestrel</h1>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+      <button onClick={fetchMetrics} disabled={loading}>
+        {loading ? "取得中..." : "メトリクス取得"}
+      </button>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+      {error && <p style={{ color: "red" }}>{error}</p>}
+
+      {metrics && (
+        <table>
+          <tbody>
+            <tr>
+              <td>CPU使用率</td>
+              <td>{metrics.cpu_usage.toFixed(1)}%</td>
+            </tr>
+            <tr>
+              <td>メモリ</td>
+              <td>
+                {formatBytes(metrics.memory_used)} /{" "}
+                {formatBytes(metrics.memory_total)}
+              </td>
+            </tr>
+            <tr>
+              <td>温度</td>
+              <td>{metrics.temperature.toFixed(1)}°C</td>
+            </tr>
+            <tr>
+              <td>ディスク</td>
+              <td>
+                {formatBytes(metrics.disk_used)} /{" "}
+                {formatBytes(metrics.disk_total)}
+              </td>
+            </tr>
+            <tr>
+              <td>稼働時間</td>
+              <td>{formatUptime(metrics.uptime_secs)}</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
     </main>
   );
 }
