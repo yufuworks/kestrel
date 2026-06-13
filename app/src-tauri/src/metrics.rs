@@ -1,4 +1,4 @@
-use crate::ssh;
+use crate::ssh::{self, SshRunner};
 
 /// Pi から取得したメトリクス
 pub struct Metrics {
@@ -12,13 +12,13 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    /// SSH 経由で Pi の各メトリクスを取得してまとめて返す
-    pub fn fetch(host: &str, user: &str) -> Result<Metrics, String> {
-        let cpu_raw = ssh::run_command(host, user, "cat /proc/stat | head -1")?;
-        let mem_raw = ssh::run_command(host, user, "free -b | grep Mem")?;
-        let temp_raw = ssh::run_command(host, user, "cat /sys/class/thermal/thermal_zone0/temp")?;
-        let disk_raw = ssh::run_command(host, user, "df -B1 / | tail -1")?;
-        let uptime_raw = ssh::run_command(host, user, "cat /proc/uptime")?;
+    /// runner を受け取るテスタブルな実装
+    pub fn fetch_with<R: SshRunner>(runner: &R, host: &str, user: &str) -> Result<Metrics, String> {
+        let cpu_raw = runner.run(host, user, "cat /proc/stat | head -1")?;
+        let mem_raw = runner.run(host, user, "free -b | grep Mem")?;
+        let temp_raw = runner.run(host, user, "cat /sys/class/thermal/thermal_zone0/temp")?;
+        let disk_raw = runner.run(host, user, "df -B1 / | tail -1")?;
+        let uptime_raw = runner.run(host, user, "cat /proc/uptime")?;
 
         Ok(Metrics {
             cpu_usage: parse_cpu(&cpu_raw)?,
@@ -29,6 +29,11 @@ impl Metrics {
             disk_used: parse_disk_used(&disk_raw)?,
             uptime_secs: parse_uptime_secs(&uptime_raw)?,
         })
+    }
+
+    /// SSH 経由で Pi の各メトリクスを取得してまとめて返す
+    pub fn fetch(host: &str, user: &str) -> Result<Metrics, String> {
+        Self::fetch_with(&ssh::RealSsh, host, user)
     }
 }
 
@@ -105,6 +110,39 @@ fn parse_field(raw: &str, index: usize) -> Result<u64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // fetch_with
+    // 各コマンド結果が対応する parse 関数を通り正しいフィールドに格納されること
+    struct FakeSsh;
+
+    impl crate::ssh::SshRunner for FakeSsh {
+        fn run(&self, _host: &str, _user: &str, command: &str) -> Result<String, String> {
+            match command {
+                c if c.contains("proc/stat") => Ok("cpu 100 0 0 900 0 0 0 0 0 0".to_string()),
+                c if c.contains("free") => Ok("Mem 8000000000 2000000000 6000000000".to_string()),
+                c if c.contains("thermal") => Ok("43500".to_string()),
+                c if c.contains("df") => Ok("/ 30000000000 15000000000 15000000000".to_string()),
+                c if c.contains("uptime") => Ok("12345.6 23456.7".to_string()),
+                _ => Err("unknown command".to_string()),
+            }
+        }
+    }
+
+    #[test]
+    fn fetch_with_maps_each_command_to_correct_field() {
+        // cpu 100 0 0 900 → idle=900, total=1000 → usage=10.0%
+        // Mem 8000000000 2000000000 → total=8GB, used=2GB
+        // 43500 → 43.5℃
+        // / 30000000000 15000000000 → total=30GB, used=15GB
+        // 12345.6 → 12345秒
+        let m = Metrics::fetch_with(&FakeSsh, "host", "user").unwrap();
+        assert!((m.cpu_usage - 10.0).abs() < 0.01);
+        assert_eq!(m.memory_total, 8000000000);
+        assert_eq!(m.memory_used, 2000000000);
+        assert!((m.temperature - 43.5).abs() < 0.001);
+        assert_eq!(m.disk_total, 30000000000);
+        assert_eq!(m.disk_used, 15000000000);
+        assert_eq!(m.uptime_secs, 12345);
+    }
 
     // parse_cpu
     // 入力: "cpu <user> <nice> <sys> <idle> <iowait> ..."

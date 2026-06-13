@@ -7,6 +7,20 @@ use std::time::Duration;
 
 static LOG_ONCE: Once = Once::new();
 
+/// SSH コマンド実行の抽象インターフェース
+pub trait SshRunner {
+    fn run(&self, host: &str, user: &str, command: &str) -> Result<String, String>;
+}
+
+/// 実際の SSH 接続を使う実装
+pub struct RealSsh;
+
+impl SshRunner for RealSsh {
+    fn run(&self, host: &str, user: &str, command: &str) -> Result<String, String> {
+        run_command(host, user, command)
+    }
+}
+
 /// SSH セッションを確立してコマンドを実行し、標準出力を返す
 pub fn run_command(host: &str, user: &str, command: &str) -> Result<String, String> {
     let addr = host
