@@ -22,7 +22,7 @@ function App() {
     setError(null);
     try {
       const result = await invoke<Metrics>("get_metrics", {
-        host: "192.168.10.171:22",
+        host: "localhost:2222",
         user: "yufu",
       });
       setMetrics(result);
@@ -58,39 +58,88 @@ function App() {
         {loading ? "取得中..." : "メトリクス取得"}
       </button>
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
+      {error && <p className="error">{error}</p>}
 
       {metrics && (
-        <table>
-          <tbody>
-            <tr>
-              <td>CPU使用率</td>
-              <td>{metrics.cpu_usage.toFixed(1)}%</td>
-            </tr>
-            <tr>
-              <td>メモリ</td>
-              <td>
-                {formatBytes(metrics.memory_used)} /{" "}
-                {formatBytes(metrics.memory_total)}
-              </td>
-            </tr>
-            <tr>
-              <td>温度</td>
-              <td>{metrics.temperature.toFixed(1)}°C</td>
-            </tr>
-            <tr>
-              <td>ディスク</td>
-              <td>
-                {formatBytes(metrics.disk_used)} /{" "}
-                {formatBytes(metrics.disk_total)}
-              </td>
-            </tr>
-            <tr>
-              <td>稼働時間</td>
-              <td>{formatUptime(metrics.uptime_secs)}</td>
-            </tr>
-          </tbody>
-        </table>
+        <>
+          <div className="metric">
+            <div className="metric-header">
+              <span>CPU使用率</span>
+              <span>{metrics.cpu_usage.toFixed(1)}%</span>
+            </div>
+            <div className="progress-bar">
+              <div
+                className="progress-fill fill-cpu"
+                style={{ width: `${metrics.cpu_usage}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="metric">
+            <div className="metric-header">
+              <span>メモリ</span>
+              <span>
+                {((metrics.memory_used / metrics.memory_total) * 100).toFixed(
+                  1,
+                )}
+                %
+              </span>
+            </div>
+            <div className="progress-bar">
+              <div
+                className="progress-fill fill-memory"
+                style={{
+                  width: `${(metrics.memory_used / metrics.memory_total) * 100}%`,
+                }}
+              />
+            </div>
+            <div className="metric-sub">
+              {formatBytes(metrics.memory_used)} /{" "}
+              {formatBytes(metrics.memory_total)}
+            </div>
+          </div>
+
+          <div className="metric">
+            <div className="metric-header">
+              <span>ディスク</span>
+              <span>
+                {((metrics.disk_used / metrics.disk_total) * 100).toFixed(1)}%
+              </span>
+            </div>
+            <div className="progress-bar">
+              <div
+                className="progress-fill fill-disk"
+                style={{
+                  width: `${(metrics.disk_used / metrics.disk_total) * 100}%`,
+                }}
+              />
+            </div>
+            <div className="metric-sub">
+              {formatBytes(metrics.disk_used)} /{" "}
+              {formatBytes(metrics.disk_total)}
+            </div>
+          </div>
+
+          <div className="metric">
+            <div className="metric-header">
+              <span>温度</span>
+              <span>{metrics.temperature.toFixed(1)}°C</span>
+            </div>
+            <div className="progress-bar">
+              <div
+                className="progress-fill fill-temp"
+                style={{ width: `${Math.min(metrics.temperature, 100)}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="metric">
+            <div className="metric-header">
+              <span>稼働時間</span>
+              <span>{formatUptime(metrics.uptime_secs)}</span>
+            </div>
+          </div>
+        </>
       )}
     </main>
   );
