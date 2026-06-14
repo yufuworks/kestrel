@@ -5,7 +5,8 @@ use std::net::ToSocketAddrs;
 use std::sync::Once;
 use std::time::Duration;
 
-static LOG_ONCE: Once = Once::new();
+static SSH_LOG_ONCE: Once = Once::new();
+static TCP_LOG_ONCE: Once = Once::new();
 
 /// SSH コマンド実行の抽象インターフェース
 pub trait SshRunner {
@@ -27,13 +28,13 @@ pub fn run_command(host: &str, user: &str, command: &str) -> Result<String, Stri
         .to_socket_addrs()
         .map_err(|e| e.to_string())?
         .find(|a| a.is_ipv4())
-        .ok_or("IPv4アドレスが見つかりません".to_string())?;
-    LOG_ONCE.call_once(|| {
+        .ok_or_else(|| format!("IPv4アドレスが見つかりません: host={} user={}", host, user))?;
+    SSH_LOG_ONCE.call_once(|| {
         eprintln!("[SSH] 接続先: {} (ユーザー: {})", addr, user);
     });
     let tcp =
         TcpStream::connect_timeout(&addr, Duration::from_secs(3)).map_err(|e| e.to_string())?;
-    LOG_ONCE.call_once(|| {
+    TCP_LOG_ONCE.call_once(|| {
         eprintln!("[TCP] 接続先: {} (ユーザー: {})", addr, user);
     });
     let mut sess = Session::new().map_err(|e| e.to_string())?;
