@@ -114,14 +114,20 @@ mod tests {
     // 各コマンド結果が対応する parse 関数を通り正しいフィールドに格納されること
     struct FakeSsh;
 
+    const OUTPUT_CPU_RAW: &str = "cpu 100 0 0 900 0 0 0 0 0 0";
+    const OUTPUT_MEMORY_RAW: &str = "Mem 8000000000 2000000000 6000000000";
+    const OUTPUT_TEMPERATURE_RAW: &str = "43500";
+    const OUTPUT_DISK_RAW: &str = "/ 30000000000 15000000000 15000000000";
+    const OUTPUT_UPTIME_RAW: &str = "12345.6 23456.7";
+
     impl crate::ssh::SshRunner for FakeSsh {
         fn run(&self, _host: &str, _user: &str, command: &str) -> Result<String, String> {
             match command {
-                c if c.contains("proc/stat") => Ok("cpu 100 0 0 900 0 0 0 0 0 0".to_string()),
-                c if c.contains("free") => Ok("Mem 8000000000 2000000000 6000000000".to_string()),
-                c if c.contains("thermal") => Ok("43500".to_string()),
-                c if c.contains("df") => Ok("/ 30000000000 15000000000 15000000000".to_string()),
-                c if c.contains("uptime") => Ok("12345.6 23456.7".to_string()),
+                c if c.contains("proc/stat") => Ok(OUTPUT_CPU_RAW.to_string()),
+                c if c.contains("free") => Ok(OUTPUT_MEMORY_RAW.to_string()),
+                c if c.contains("thermal") => Ok(OUTPUT_TEMPERATURE_RAW.to_string()),
+                c if c.contains("df") => Ok(OUTPUT_DISK_RAW.to_string()),
+                c if c.contains("uptime") => Ok(OUTPUT_UPTIME_RAW.to_string()),
                 _ => Err("unknown command".to_string()),
             }
         }
@@ -129,19 +135,21 @@ mod tests {
 
     #[test]
     fn fetch_with_maps_each_command_to_correct_field() {
-        // cpu 100 0 0 900 → idle=900, total=1000 → usage=10.0%
-        // Mem 8000000000 2000000000 → total=8GB, used=2GB
-        // 43500 → 43.5℃
-        // / 30000000000 15000000000 → total=30GB, used=15GB
-        // 12345.6 → 12345秒
         let m = Metrics::fetch_with(&FakeSsh, "host", "user").unwrap();
-        assert!((m.cpu_usage - 10.0).abs() < 0.01);
-        assert_eq!(m.memory_total, 8000000000);
-        assert_eq!(m.memory_used, 2000000000);
-        assert!((m.temperature - 43.5).abs() < 0.001);
-        assert_eq!(m.disk_total, 30000000000);
-        assert_eq!(m.disk_used, 15000000000);
-        assert_eq!(m.uptime_secs, 12345);
+        let expected_cpu_usage = parse_cpu(OUTPUT_CPU_RAW).unwrap();
+        let expected_memory_total = parse_field(OUTPUT_MEMORY_RAW, 1).unwrap();
+        let expected_memory_used = parse_field(OUTPUT_MEMORY_RAW, 2).unwrap();
+        let expected_temperature = parse_field(OUTPUT_TEMPERATURE_RAW, 0).unwrap() as f64 / 1000.0;
+        let expected_disk_total = parse_field(OUTPUT_DISK_RAW, 1).unwrap();
+        let expected_disk_used = parse_field(OUTPUT_DISK_RAW, 2).unwrap();
+        let expected_uptime_secs = parse_uptime_secs(OUTPUT_UPTIME_RAW).unwrap();
+        assert!((m.cpu_usage - expected_cpu_usage).abs() < 0.01);
+        assert_eq!(m.memory_total, expected_memory_total);
+        assert_eq!(m.memory_used, expected_memory_used);
+        assert!((m.temperature - expected_temperature).abs() < 0.001);
+        assert_eq!(m.disk_total, expected_disk_total);
+        assert_eq!(m.disk_used, expected_disk_used);
+        assert_eq!(m.uptime_secs, expected_uptime_secs);
     }
 
     // parse_cpu
@@ -158,85 +166,107 @@ mod tests {
     }
     #[test]
     fn parse_cpu_less_than_5_fields_input_returns_error() {
-        assert_eq!(
-            parse_cpu("cpu 1234 567 890"),
-            Err("cpu parse error".to_string())
-        );
+        let input = "cpu 1234 567 890";
+        let expected_err = "cpu parse error".to_string();
+        assert_eq!(parse_cpu(input), Err(expected_err));
     }
 
     // parse_memory_total
     // 入力: "Mem <total> <used> <free> ..."（free -b | grep Mem）
     #[test]
     fn parse_memory_total_input_returns_value() {
-        assert_eq!(parse_memory_total(" 100 200 300 400 "), Ok(200))
+        let input = " 100 200 300 400 ";
+        let expected_value = 200;
+        assert_eq!(parse_memory_total(input), Ok(expected_value))
     }
 
     // parse_memory_used
     // 入力: "Mem <total> <used> <free> ..."（free -b | grep Mem）
     #[test]
     fn parse_memory_used_input_returns_value() {
-        assert_eq!(parse_memory_used(" 100 200 300 400 "), Ok(300))
+        let input = " 100 200 300 400 ";
+        let expected_value = 300;
+        assert_eq!(parse_memory_used(input), Ok(expected_value))
     }
 
     // parse_temperature
     // 入力: ミリ℃の整数文字列（例: "43500" → 43.5℃）
     #[test]
     fn parse_temperature_input_returns_value() {
-        assert_eq!(parse_temperature(" 12345 "), Ok(12.345))
+        let input = " 12345 ";
+        let expected_value = 12.345;
+        assert_eq!(parse_temperature(input), Ok(expected_value))
     }
     #[test]
     fn parse_temperature_input_returns_error() {
-        assert!(parse_temperature(" invalid ").is_err())
+        let input = " invalid ";
+        assert!(parse_temperature(input).is_err())
     }
 
     // parse_disk_total
     // 入力: "<filesystem> <total> <used> <avail> ..."（df -B1 / | tail -1）
     #[test]
     fn parse_disk_total_input_returns_value() {
-        assert_eq!(parse_disk_total(" 100 200 300 400 "), Ok(200))
+        let input = " 100 200 300 400 ";
+        let expected_value = 200;
+        assert_eq!(parse_disk_total(input), Ok(expected_value))
     }
 
     // parse_disk_used
     // 入力: "<filesystem> <total> <used> <avail> ..."（df -B1 / | tail -1）
     #[test]
     fn parse_disk_used_input_returns_value() {
-        assert_eq!(parse_disk_used(" 100 200 300 400 "), Ok(300))
+        let input = " 100 200 300 400 ";
+        let expected_value = 300;
+        assert_eq!(parse_disk_used(input), Ok(expected_value))
     }
 
     // parse_uptime_secs
     // 入力: "<uptime秒> <idle秒>"（/proc/uptime）。先頭値のみ使用、小数切り捨て
     #[test]
     fn parse_uptime_secs_input_returns_value() {
-        assert_eq!(parse_uptime_secs(" 12.3456 23.456 "), Ok(12))
+        let input = " 12.3456 23.456 ";
+        let expected_value = 12;
+        assert_eq!(parse_uptime_secs(input), Ok(expected_value))
     }
     #[test]
     fn parse_uptime_secs_empty_input_returns_error() {
-        assert_eq!(parse_uptime_secs(""), Err("uptime parse error".to_string()))
+        let input = "";
+        let expected_err = "uptime parse error".to_string();
+        assert_eq!(parse_uptime_secs(input), Err(expected_err))
     }
     #[test]
     fn parse_uptime_secs_invalid_input_returns_error() {
-        assert!(parse_uptime_secs("invalid 0.123").is_err())
+        let input = "invalid 0.123";
+        assert!(parse_uptime_secs(input).is_err());
     }
     #[test]
     fn parse_uptime_secs_input_numeric_returns_value() {
-        assert_eq!(parse_uptime_secs(" 345 4567 "), Ok(345))
+        let input = " 345 4567 ";
+        let expected_value = 345;
+        assert_eq!(parse_uptime_secs(input), Ok(expected_value))
     }
 
     // parse_field
     // 入力: 空白区切りの文字列。index は 0 始まり
     #[test]
     fn parse_field_valid_input_returns_value() {
-        assert_eq!(parse_field("100 200 300 400", 1), Ok(200))
+        let input = "100 200 300 400";
+        let index = 1;
+        let expected_value = 200;
+        assert_eq!(parse_field(input, index), Ok(expected_value))
     }
     #[test]
     fn parse_field_out_of_range_returns_error() {
-        assert_eq!(
-            parse_field("100 200 300 400", 4),
-            Err("parse error".to_string())
-        )
+        let input = "100 200 300 400";
+        let index = 4;
+        let expected_err = "parse error".to_string();
+        assert_eq!(parse_field(input, index), Err(expected_err))
     }
     #[test]
     fn parse_field_non_numberic_returns_error() {
-        assert!(parse_field("100 200 str 400", 2).is_err())
+        let input = "100 200 str 400";
+        let index = 2;
+        assert!(parse_field(input, index).is_err())
     }
 }

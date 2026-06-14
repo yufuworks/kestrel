@@ -52,3 +52,32 @@ pub fn run_command(host: &str, user: &str, command: &str) -> Result<String, Stri
 
     Ok(output)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // run_command
+    #[test]
+    fn run_command_ipv6_only_host_returns_ipv4_not_found_error() {
+        let host = "[::1]:22";
+        let user = "user";
+        let command = "cmd";
+        let expected_err = format!("IPv4アドレスが見つかりません: host={} user={}", host, user);
+        assert_eq!(run_command(host, user, command), Err(expected_err));
+    }
+    #[test]
+    fn run_command_invalid_host_format_returns_error() {
+        let host = "invalid-host-no-port";
+        let user = "user";
+        let command = "cmd";
+        assert!(run_command(host, user, command).is_err());
+    }
+    #[test]
+    fn run_command_unreachable_host_returns_error() {
+        let host = "unreachable-host";
+        let user = "user";
+        let command = "cmd";
+        assert!(run_command(host, user, command).is_err());
+    }
+}
