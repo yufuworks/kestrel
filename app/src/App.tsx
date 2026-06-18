@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
+import { formatBytes, formatUptime } from "./utils";
 
 interface Metrics {
   cpu_usage: number;
@@ -38,17 +39,6 @@ function App() {
     const timer = setInterval(fetchMetrics, 5000);
     return () => clearInterval(timer);
   }, []);
-
-  function formatBytes(bytes: number): string {
-    return (bytes / 1024 / 1024 / 1024).toFixed(1) + " GB";
-  }
-
-  function formatUptime(secs: number): string {
-    const days = Math.floor(secs / 86400);
-    const hours = Math.floor((secs % 86400) / 3600);
-    const mins = Math.floor((secs % 3600) / 60);
-    return `${days}日 ${hours}時間 ${mins}分`;
-  }
 
   return (
     <main className="container">
